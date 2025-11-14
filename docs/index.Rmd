@@ -13,6 +13,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 **2. Approach:** Analyse monthly prescribing for SSRI antidepressants between 2022 and 2023 of each Scotland board, linking each board and month to daylength hours calculated from Health Board centroids for the 15th of each month.
 
+**Note:** Several code chunks are missing in between to keep it short
+
 ```{r libraries, include = FALSE}
 # Load packages
 library(tidyverse)
@@ -155,4 +157,8 @@ ggplot(scotland_daylength_per_month, aes(x = date)) +
   ) +
   theme_minimal(base_size = 13)
 ```
+
+**Discussion:** From the plot above there seems to be no pattern between SSRI prescriptions and daylength time for the whole of Scotland.
+However, the effect of daylength may be better shown by the differences in prescribing for each healthboard. Another approach would be to consider the mg of SSRI per 1000 people rather than total items.
+**Further Work:** I will map the winter summer presribing differences for each healthboard, which would give seasonal trends based on latitude. I will also consider adjusting the prescription rate graphs to match a hypothetical time lag for prescribing SSRIs following new depression symptoms.
 
