@@ -1,33 +1,158 @@
 ---
-title: "Assessment"
-output: html_document
-date: "2025-10-31"
+title: "How does daylight duration influence antidepressant prescribing?"
+output: 
+  html_document:
+  number_sections: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+**1. Question:** Do months with less daylight associate with higher antidepressant prescribing in Scotland, and does this relationship vary across NHS Health Boards?
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+**2. Approach:** Analyse monthly prescribing for SSRI antidepressants between 2022 and 2023 of each Scotland board, linking each board and month to daylength hours calculated from Health Board centroids for the 15th of each month.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r libraries, include = FALSE}
+# Load packages
+library(tidyverse)
+library(lubridate)
+library(readr)
+library(glue)
+library(sf)
+library(janitor)
+library(SunCalcMeeus)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(viridisLite)
+library(scales)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r files, echo=T, results='hide', message=FALSE}
+# Associate all csv files with the variable "file"
+files <- list.files(here("data", "csv_files"), pattern = "csv", full.names = TRUE)
+
+all_files_together <- map_dfr(files, function(f) {
+  df <- read_csv(f)
+  # Make sure DMDCode exists and that it's always character
+  if (!"DMDCode" %in% names(df)) {
+    df$DMDCode <- NA_character_              # add it if missing
+  } else {
+    df$DMDCode <- as.character(df$DMDCode)   # make double into character (some months were double and others character)
+  }
+  df
+})
+
+# Keep only SSRI antidepressants
+antidep_only <- all_files_together %>%
+  clean_names() %>%
+  filter(str_starts(bnf_item_code, "040303"))
+
+# Select only needed information (hbt, item code, number of items and date) and create a new date column
+antidep_only <- antidep_only %>%
+  select(hbt,bnf_item_code,bnf_item_description,number_of_paid_items,paid_date_month) %>%
+  mutate(
+    year  = as.integer(substr(paid_date_month, 1, 4)),
+    month = as.integer(substr(paid_date_month, 5, 6)),
+  ) %>% 
+  mutate(date = as.Date(paste(year, month, 15, sep="-")))
 ```
 
-```{r press, echo=FALSE}
-plot(pressure)
+```{r population, echo=T, results='hide', message=FALSE}
+# Add the total number of antidepressants by hbt and date
+antidep_summed <- antidep_only %>%
+  group_by(hbt, year, month, date) %>%
+  summarise(items = sum(number_of_paid_items, na.rm = TRUE), .groups = "drop")
+
+# Read the population file
+population_file <- read_csv("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv") %>%
+  clean_names()
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r, include=FALSE}
+
+# Filter for all sexes and keep only healthboard, year, and population number
+pop_filtered <- population_file %>%
+  filter(sex == "All") %>%
+  select(hb, year, all_ages)
+
+# Combine the antidep_summed table with the population and calculate items per 1000. Also need to filter for NAs in all_ages
+antidep_per_1000 <- antidep_summed %>%
+  left_join(pop_filtered, by = c("hbt" = "hb","year")) %>%
+  mutate(items_per_1000 = 1000 * items / all_ages) %>% 
+  filter(!is.na(hbt), !is.na(year), !is.na(all_ages))
+```
+
+
+```{r geometry, echo=T, results='hide', message=FALSE}
+# Create tibble of Healthboard centroids
+hb_centroids <- tibble(
+  hbt = c("S08000015", "S08000016", "S08000017", "S08000019", "S08000020",
+          "S08000022", "S08000024", "S08000025", "S08000026", "S08000028",
+          "S08000029", "S08000030", "S08000031", "S08000032"),
+  lat = c(55.86, 55.95, 57.15, 57.48, 56.46, 56.20, 55.46, 55.77, 55.07, 
+          55.60, 56.12, 58.21, 58.98, 60.15),
+  lon = c(-4.25, -3.19, -2.11, -4.22, -2.97, -3.18, -4.63, -4.05, -3.61, 
+          -2.72, -3.94, -6.39, -2.96, -1.15)
+)
+```
+
+```{r, include=FALSE}
+# Combine the antidepressants table with the centroids to create daylength using the daylength function from SunCalcMeeus package
+daylength_grid <- antidep_per_1000 %>% 
+  left_join(hb_centroids, by = "hbt")%>% 
+  rowwise() %>% 
+   mutate(
+    daylength_hours = day_length(
+      date    = date,
+      geocode = data.frame(lon = lon, lat = lat),
+      tz      = "Europe/London"
+    )
+  ) %>%
+  ungroup()
+
+# Create final table with Seasons
+final_antidep <- daylength_grid %>%
+  mutate(season = case_when(
+    month %in% c(12,1,2) ~ "Winter",
+    month %in% c(3,4,5)  ~ "Spring",
+    month %in% c(6,7,8)  ~ "Summer",
+    month %in% c(9,10,11)   ~ "Autumn"
+  ))
+```
+
+```{r, include=FALSE}
+# Create an average Scotland daylength and items table for each month
+scotland_daylength_per_month <- final_antidep %>%
+  group_by(date) %>%
+  summarise(
+    avg_daylength = mean(daylength_hours),
+    avg_rate = mean(items_per_1000)
+  )
+```
+
+
+```{r plot}
+# Plot both daylength and antidepressants prescribed on dual y axes against the date
+ggplot(scotland_daylength_per_month, aes(x = date)) +
+  geom_line(aes(y = avg_rate), color = "lightblue", linewidth = 1.2) +
+  geom_line(aes(y = rescale(avg_daylength, to = range(avg_rate))),
+            color = "orange", linewidth = 1.2, linetype = "dashed") +
+  scale_y_continuous(
+    name = "SSRI prescriptions per 1,000",
+    sec.axis = sec_axis(~rescale(., from = range(scotland_daylength_per_month$avg_rate),
+                                         to = range(scotland_daylength_per_month$avg_daylength)),
+                        name = "Average daylight hours")
+  ) +
+  labs(
+    title = "Daylight vs SSRI prescribing over time (Scotland total)",
+    subtitle = "Dashed orange = average daylight, solid blue = prescribing rate",
+    x = "Date (15th of each month)"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
