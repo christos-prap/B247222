@@ -365,7 +365,6 @@ centroids for the 15th of each month.</p>
 keep it short</p>
 <pre class="r"><code># Associate all csv files with the variable &quot;file&quot;
 files &lt;- list.files(here(&quot;data&quot;, &quot;csv_files&quot;), pattern = &quot;csv&quot;, full.names = TRUE)
-
 all_files_together &lt;- map_dfr(files, function(f) {
   df &lt;- read_csv(f)
   # Make sure DMDCode exists and that it&#39;s always character
@@ -376,38 +375,10 @@ all_files_together &lt;- map_dfr(files, function(f) {
   }
   df
 })
-
 # Keep only SSRI antidepressants
 antidep_only &lt;- all_files_together %&gt;%
   clean_names() %&gt;%
-  filter(str_starts(bnf_item_code, &quot;040303&quot;))
-
-# Select only needed information (hbt, item code, number of items and date) and create a new date column
-antidep_only &lt;- antidep_only %&gt;%
-  select(hbt,bnf_item_code,bnf_item_description,number_of_paid_items,paid_date_month) %&gt;%
-  mutate(
-    year  = as.integer(substr(paid_date_month, 1, 4)),
-    month = as.integer(substr(paid_date_month, 5, 6)),
-  ) %&gt;% 
-  mutate(date = as.Date(paste(year, month, 15, sep=&quot;-&quot;)))</code></pre>
-<pre class="r"><code># Add the total number of antidepressants by hbt and date
-antidep_summed &lt;- antidep_only %&gt;%
-  group_by(hbt, year, month, date) %&gt;%
-  summarise(items = sum(number_of_paid_items, na.rm = TRUE), .groups = &quot;drop&quot;)
-
-# Read the population file
-population_file &lt;- read_csv(&quot;https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv&quot;) %&gt;%
-  clean_names()</code></pre>
-<pre class="r"><code># Create tibble of Healthboard centroids
-hb_centroids &lt;- tibble(
-  hbt = c(&quot;S08000015&quot;, &quot;S08000016&quot;, &quot;S08000017&quot;, &quot;S08000019&quot;, &quot;S08000020&quot;,
-          &quot;S08000022&quot;, &quot;S08000024&quot;, &quot;S08000025&quot;, &quot;S08000026&quot;, &quot;S08000028&quot;,
-          &quot;S08000029&quot;, &quot;S08000030&quot;, &quot;S08000031&quot;, &quot;S08000032&quot;),
-  lat = c(55.86, 55.95, 57.15, 57.48, 56.46, 56.20, 55.46, 55.77, 55.07, 
-          55.60, 56.12, 58.21, 58.98, 60.15),
-  lon = c(-4.25, -3.19, -2.11, -4.22, -2.97, -3.18, -4.63, -4.05, -3.61, 
-          -2.72, -3.94, -6.39, -2.96, -1.15)
-)</code></pre>
+  filter(str_starts(bnf_item_code, &quot;040303&quot;))</code></pre>
 <pre class="r"><code># Plot both daylength and antidepressants prescribed on dual y axes against the date
 ggplot(scotland_daylength_per_month, aes(x = date)) +
   geom_line(aes(y = avg_rate), color = &quot;lightblue&quot;, linewidth = 1.2) +
@@ -430,12 +401,13 @@ ggplot(scotland_daylength_per_month, aes(x = date)) +
 pattern between SSRI prescriptions and daylength time for the whole of
 Scotland. However, the effect of daylength may be better shown by the
 differences in prescribing for each healthboard. Another approach would
-be to consider the mg of SSRI per 1000 people rather than total items.
-<strong>Further Work:</strong> I will map the winter summer presribing
-differences for each healthboard, which would give seasonal trends based
-on latitude. I will also consider adjusting the prescription rate graphs
-to match a hypothetical time lag for prescribing SSRIs following new
-depression symptoms.</p>
+be to consider the mg of SSRI per 1000 people rather than total
+items.</p>
+<p><strong>Further Work:</strong> I will map the winter-summer
+prescribing differences for each healthboard, which would give seasonal
+trends based on latitude. I could also adjust the prescription rate
+graph to match a hypothetical time lag for prescribing SSRIs following
+new depression symptoms.</p>
 
 
 
