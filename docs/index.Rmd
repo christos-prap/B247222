@@ -36,7 +36,6 @@ library(scales)
 ```{r files, echo=T, results='hide', message=FALSE}
 # Associate all csv files with the variable "file"
 files <- list.files(here("data", "csv_files"), pattern = "csv", full.names = TRUE)
-
 all_files_together <- map_dfr(files, function(f) {
   df <- read_csv(f)
   # Make sure DMDCode exists and that it's always character
@@ -47,12 +46,13 @@ all_files_together <- map_dfr(files, function(f) {
   }
   df
 })
-
 # Keep only SSRI antidepressants
 antidep_only <- all_files_together %>%
   clean_names() %>%
   filter(str_starts(bnf_item_code, "040303"))
+```
 
+```{r, include=FALSE}
 # Select only needed information (hbt, item code, number of items and date) and create a new date column
 antidep_only <- antidep_only %>%
   select(hbt,bnf_item_code,bnf_item_description,number_of_paid_items,paid_date_month) %>%
@@ -63,7 +63,8 @@ antidep_only <- antidep_only %>%
   mutate(date = as.Date(paste(year, month, 15, sep="-")))
 ```
 
-```{r population, echo=T, results='hide', message=FALSE}
+
+```{r population, include=FALSE}
 # Add the total number of antidepressants by hbt and date
 antidep_summed <- antidep_only %>%
   group_by(hbt, year, month, date) %>%
@@ -90,7 +91,7 @@ antidep_per_1000 <- antidep_summed %>%
 ```
 
 
-```{r geometry, echo=T, results='hide', message=FALSE}
+```{r geometry, include=FALSE}
 # Create tibble of Healthboard centroids
 hb_centroids <- tibble(
   hbt = c("S08000015", "S08000016", "S08000017", "S08000019", "S08000020",
@@ -160,5 +161,6 @@ ggplot(scotland_daylength_per_month, aes(x = date)) +
 
 **Discussion:** From the plot above there seems to be no pattern between SSRI prescriptions and daylength time for the whole of Scotland.
 However, the effect of daylength may be better shown by the differences in prescribing for each healthboard. Another approach would be to consider the mg of SSRI per 1000 people rather than total items.
-**Further Work:** I will map the winter summer presribing differences for each healthboard, which would give seasonal trends based on latitude. I will also consider adjusting the prescription rate graphs to match a hypothetical time lag for prescribing SSRIs following new depression symptoms.
+
+**Further Work:** I will map the winter-summer prescribing differences for each healthboard, which would give seasonal trends based on latitude. I could also adjust the prescription rate graph to match a hypothetical time lag for prescribing SSRIs following new depression symptoms.
 
