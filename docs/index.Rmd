@@ -9,11 +9,11 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-**1. Question:** Do months with less daylight associate with higher antidepressant prescribing in Scotland, and does this relationship vary across NHS Health Boards?
+**1. Question:** Is there a relationship between daylength and antidepressant prescribing in Scotland, and are there differences based on Healthboard?
 
-**2. Approach:** Analyse monthly prescribing for SSRI antidepressants between 2022 and 2023 of each Scotland board, linking each board and month to daylength hours calculated from Health Board centroids for the 15th of each month.
+**2. Approach:** Look at monthly prescribing for SSRI antidepressants between 2022 and 2023. Calculate the daylength for each healthboard from Healthboard centroids for the 15th of each month. Look at the relationship between the two for Scotland as a whole and in each Healthboard.
 
-**Note:** Code chunks are missing to keep it short
+**Note:** I've only added first code chunk to keep it short
 
 ```{r libraries, include = FALSE}
 # Load packages
@@ -46,13 +46,14 @@ all_files_together <- map_dfr(files, function(f) {
   }
   df
 })
+```
+
+```{r, include=FALSE}
 # Keep only SSRI antidepressants
 antidep_only <- all_files_together %>%
   clean_names() %>%
   filter(str_starts(bnf_item_code, "040303"))
-```
 
-```{r, include=FALSE}
 # Select only needed information (hbt, item code, number of items and date) and create a new date column
 antidep_only <- antidep_only %>%
   select(hbt,bnf_item_code,bnf_item_description,number_of_paid_items,paid_date_month) %>%
@@ -160,7 +161,7 @@ ggplot(scotland_daylength_per_month, aes(x = date)) +
 ```
 
 **Discussion:** From the plot above there seems to be no pattern between SSRI prescriptions and daylength time for the whole of Scotland.
-However, the effect of daylength may be better shown by the differences in prescribing for each healthboard. Another approach would be to consider the mg of SSRI per 1000 people rather than total items.
+However, the effect of daylength may be better shown by the differences in prescribing for each Healthboard. Another approach would be to consider the mg of SSRI per 1000 people rather than total items.
 
-**Further Work:** I will map the winter-summer prescribing differences for each healthboard, which would give seasonal trends based on latitude. I could also adjust the prescription rate graph to match a hypothetical 1-2 month time lag for prescribing SSRIs following new depression symptoms.
+**Further Work:** I will map the winter-summer prescribing differences for each Healthboard, which would give seasonal trends based on latitude. I could also adjust the prescription rate graph to match a hypothetical 1-2 month time lag for prescribing SSRIs following new depression symptoms.
 
