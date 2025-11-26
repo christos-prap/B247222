@@ -7,10 +7,288 @@ output:
     toc_float:
       collapsed: true
     number_sections: true
+    code_folding: show
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
+# Introduction 
+**1. Question:** Is there a relationship between daylight and SSRI antidepressant prescribing in Scotland, and are there differences based on Health Board?
 
+I chose to focus on this question because shortened daylight is often linked to a low mood as, for example, is seen in seasonal affective disorder (Raza et al., 2024). This is particularly relevant in Scotland, which spans a very large range in latitude, meaning that there is great daylight variability between regions. Large differences in daylight are also seen in different seasons, since summers are very long and winters very short. I, therefore, wanted to find out whether these daylight differences truly do cause changes in mood on a population level and, therefore, lead to patterns in antidepressant prescribing. I have chosen to focus on selective serotonin reuptake inhibitors (SSRIs), because they are the first-line treatment for depression and anxiety in Scotland. Unlike other antidepressant classes, like tricyclics, they are prescribed consistently across age groups and regions, which means that these factors would have less of an effect on prescribing rates (Lockhart & Guthrie, 2011).
+
+Hypothesis: I hypothesise that SSRI prescribing will be higher during winter months when daylight is shortest, and lower during the summer, when daylight is longest. I also expect that more northern Health Boards will show higher prescribing (and less daylight) during winter as well as lower summer prescribing (and more daylight) during the summer than southern Boards.
+
+# Data & Methods
+
+To address the question, I use three public data sources for: 1. community prescribing, 2. Health Board population, and 3. Health Board geography. From the prescribing data, I look at monthly prescribing for SSRI antidepressants across 2022-2024, since this is recent post-Covid data, with a relatively long time span. I combine this with the population estimates to calculate the per-capita prescribing rates for each NHS Health Board in each month. I then join this to an estimate of daylight (for the 15th of each month), which I calculate based on the Health Board centroids (single representative point of location). Finally, I look at the relationship between daylight and prescriptions for Scotland as a whole and the winter vs summer differences in each Health Board.
+
+**1. Prescribing data:** Public Health Scotland, [Prescriptions in the Community](https://www.opendata.nhs.scot/dataset/prescriptions-in-the-community). I downloaded the "Data by Prescriber Location" files for every month from January 2022 up to December 2024. The links to the csv files used can be found in docs/file_links.csv in this project.
+
+**2. Population Estimates:** Public Health Scotland, [Health Board 2019 Estimates (CSV file)](https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv)
+
+**3. Geography:** data.gov.uk, [NHS Health Boards (zip file)](https://maps.gov.scot/ATOM/shapefiles/SG_NHS_HealthBoards_2019.zip).
+
+## Load packages and ingest prescribing data, keeping only SSRI antidepressants
+
+```{r libraries}
+# Required R packages: tidyverse, sf, lubridate, janitor, SunCalcMeeus, here, scales, plotly, htmltools
+# Load packages
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(janitor)
+library(SunCalcMeeus) # calculates daylight based on latitude and longitude
+library(here)
+library(scales) # to rescale and visualise plots
+library(plotly) # for interactive plots
+library(DT) # for interactive tables
+library(htmltools) # for captions
+```
+
+```{r import_prescribing_data}
+# Read all csv prescription files and combine into one and make sure to avoid problems with DMDCode column
+prescriptions_raw <- list.files(here("data", "csv_files"), pattern = "csv", full.names = TRUE) %>%
+  map_dfr(function(f) {
+    df <- read_csv(f, na = c("", "NA"), show_col_types = FALSE)
+    # Dont include DMDCode if it exists, as it will lead to binding issues
+    df <- df %>% select(-any_of("DMDCode"))
+    df
+  }) %>%
+  clean_names()
+```
+
+```{r SSRI_data}
+# Keep only SSRI antidepressants and select only the columns: hbt, number of items and paid_date_month and create a new date column with the 15th of each month
+SSRI_only <- prescriptions_raw %>%
+  filter(str_starts(bnf_item_code, "040303")) %>%
+  select(hbt,number_of_paid_items,paid_date_month) %>%
+  mutate(year = as.integer(substr(paid_date_month, 1, 4)), # year from YYYYMM
+        month = as.integer(substr(paid_date_month, 5, 6)), # month from YYYYMM
+        date = as.Date(paste(year, month, 15, sep="-")), # creates date object for the 15th of each month
+        month = month(date, label = TRUE, abbr = FALSE)) # transforms month to an actual month rather than a number
+
+# Add the total number of SSRI antidepressants by Health Board and date
+SSRI_total <- SSRI_only %>%
+  group_by(hbt, year, month, date) %>%
+  summarise(items = sum(number_of_paid_items, na.rm = TRUE), .groups = "drop")
+```
+
+## Population and per capita SSRI prescriptions in each Health Board
+
+```{r population_rate}
+# Read the Health Board population file
+hb_population <- read_csv("https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv", na = c("", "NA"), show_col_types = FALSE) %>%
+  clean_names() %>% 
+  filter(sex == "All") %>%     # Filter for all sexes
+  select(hb, year, all_ages)    # keep Health Board, year, and population number
+
+# Combine the prescribing data with the population and calculate SSRIs per 1,000 for each Health Board and date.
+SSRI_per_1000 <- SSRI_total %>%
+  left_join(hb_population, by = c("hbt" = "hb","year")) %>%
+  filter(!is.na(all_ages)) %>% 
+  mutate(items_per_1000 = 1000 * items / all_ages)
+```
+
+## Health Board centroids and daylight
+
+```{r geometry}
+# Read geometry file
+hb_geometry <- st_read(here("data", "geometry", "SG_NHS_HealthBoards_2019.shp"), quiet = TRUE)
+
+# Transform latitude and longitude to degrees (which is what the 4326 means), needed for SunCalcMeeus
+hb_geometry <- hb_geometry %>% 
+  st_transform(4326)
+```
+
+```{r centroids}
+# Create tibble of Health Board centroids to represent location
+hb_coordinates <- hb_geometry %>%
+# Compute the centroid geometry for each polygon and then take the longitude and latitude from this centroid
+  mutate(centroid = st_centroid(geometry), 
+         lon = st_coordinates(centroid)[, 1], # [ , 1] is longitude
+         lat = st_coordinates(centroid)[, 2]) %>% # [ , 2] is latitude
+  st_drop_geometry() %>% 
+  select(hbt = HBCode, hb_name = HBName, lat, lon)
+```
+
+```{r daylight}
+# Join SSRI_per_1000 with the centroids to calculate daylight in hours (using daylight() from SunCalcMeeus)
+SSRI_with_daylight <- SSRI_per_1000 %>% 
+  left_join(hb_coordinates, by = "hbt")%>% 
+  rowwise() %>% 
+   mutate(daylight_hours = day_length(date = date, geocode = data.frame(lon = lon, lat = lat), tz = "Europe/London")) %>%
+  ungroup()
+```
+
+```{r seasons}
+# Create final data with Seasons
+SSRI_final <- SSRI_with_daylight %>%
+  mutate(season = case_when(month(date) %in% c(12,1,2) ~ "Winter", 
+                            month(date) %in% c(3,4,5) ~ "Spring", 
+                            month(date) %in% c(6,7,8)  ~ "Summer", 
+                            TRUE ~ "Autumn"))
+```
+
+```{r averages_function}
+# helper function: calculates average daylight and prescriptions after grouping based on one or more variables (...)
+averages_by_group <- function(data, ...) {
+  data %>%
+    group_by(...) %>%
+    summarise(avg_daylight = mean(daylight_hours, na.rm = TRUE),
+      avg_rate = mean(items_per_1000, na.rm = TRUE),
+      .groups = "drop")
+}
+```
+
+# Results (Table and Plots)
+
+I have created one table and 2 plots looking at the relationship between daylight hours and SSRI prescribing.
+
+## Figure 1. SSRI Prescribing and Daylight by Month (Sortable)
+
+In the following table I present the average SSRI prescriptions per 1,000 people and the average daylight in each month.
+
+```{r monthly_averages}
+# Use helper function to calculate the average Scotland daylight and prescription rate for each month
+monthly_averages <- averages_by_group(SSRI_final, month, season)
+
+# Rename columns in the data to make them more readable
+monthly_averages_pretty <- monthly_averages %>%
+  select(month, season, avg_daylight, avg_rate) %>% 
+  rename("Month" = month, "Season" = season, "Daylight (hours)" = avg_daylight, "SSRI prescriptions per 1,000" = avg_rate)
+```
+
+```{r monthly_table}
+# Create a sortable table with a title and values to 2 decimal places, with a caption and centering
+datatable(monthly_averages_pretty, rownames = FALSE,
+  caption = tags$caption(style = "caption-side: top; text-align: center; font-weight: bold; font-size: 18px;", "Average Monthly SSRI Prescribing and Daylight in Scotland (2022-2024)"),
+  options = list(paging = FALSE, info = FALSE, searching = FALSE, 
+                 orderClasses = TRUE,
+                 columnDefs = list(list(className = "dt-center", targets = "_all")))) %>% # for centering
+  formatRound(columns = c("Daylight (hours)", "SSRI prescriptions per 1,000"), digits = 2) # for 2 decimal places
+```
+
+At first glance, we can see that SSRI prescribing does not vary considerably from month to month (no more than 6 items), while daylight varies considerably more (days in June are nearly 3 times longer than December). Sorting by SSRI prescriptions, we can see winter months appear both first (February) and second-to-last (December). This lack of pattern suggests that, even if there is an association between prescribing and daylight, it is much smaller than the effect of more stable, structural factors, which contrast the short-term changes in daylight. This could mean, for example, that deprivation or healthcare access affect a greater proportion of the population and to a greater degree than daylight. To get a better view of the relationship, I will look at the trends of antidepressant prescriptions and daylight on a time-wise plot across the entire span from 2022 to 2024.
+
+## Figure 2. Scotland-level seasonality
+
+In the plot below I look at the SSRI prescription rate and daylight from January 2022 up to December 2024. The plot shows the prescription rate and daylight for the 15th of each month on dual y axes.
+
+```{r dual_axes_plot}
+# Calculate average prescription rate and daylight for each date
+date_averages <- averages_by_group(SSRI_final, year, month, date)
+
+# Plot both daylight and antidepressants prescribed, customised on dual y axes against the date
+dual_plot <- plot_ly(date_averages, x = ~date) %>%
+  add_lines(y = ~avg_rate, 
+            name = "SSRI prescriptions per 1,000", 
+            line = list(color = "lightblue")) %>%
+  add_lines(y = ~avg_daylight, 
+            name = "Average daylight hours", 
+            yaxis = "y2", 
+            line = list(color = "orange", dash = "dash")) %>%
+  # customised layout of axes to make it presentable
+  layout(title = list(text = "Daylight vs SSRI prescribing over time<br>(Scotland total, 2022-2024)", x = 0.5, xanchor = "center"),
+    xaxis = list(title = "Date (15th of each month)"),
+    yaxis = list(title = "SSRI prescriptions per 1,000", showgrid = FALSE),
+    yaxis2 = list(title = "Average daylight hours", overlaying = "y", side = "right", showgrid  = FALSE),
+    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.12),
+    margin = list(t = 120, r = 65)) # this margin (t = top, r = right) ensures that the title and axes don't overlap
+
+# Print the plot
+dual_plot
+```
+
+*Hover over plot to inspect*
+
+The prescribing graph appears significantly noisier than the clear annual cycle in daylight. There are many abrupt month-to-month jumps in SSRI prescriptions, which do not align with the daylight pattern. Again, looking at the range of prescriptions per 1,000 (58.7 to 68.4), there is a relatively small difference (17%) from minimum to maximum, whereas the variation of daylight hours (6.8 to 17.8 hours) is much larger (162%). Since the graph has a relatively narrow range for prescriptions, these spikes could simply be a part of the normal variability of Scotland-level prescribing. This means that, although daylight could affect some individuals' mood, this effect is minimal Scotland-wide. However, it is also important to consider the temporal element of prescriptions. Even if daylight has an effect on mood, the effect on SSRI prescriptions may not be evident because of the differences in how quickly daylight affects mood and, in turn, how quickly the SSRIs are prescribed. To see whether regional differences could be hiding a possible association, I will look at SSRI prescriptions and daylight at each Health Board.
+
+## Figure 3. Winter vs Summer differences for each Health Board
+
+In this figure I look at winter, the period with the shortest daylight time, and summer, the period with the longest daylight time. I calculate the average daylight and prescription rate for each Health Board (2022-2024) during the summer and winter, resulting in 4 maps.
+
+```{r seasonal_geometry}
+# Keep only Winter and Summer seasons from SSRI_final and calculate averages using helper function
+seasonal_summary <- SSRI_final %>%
+  filter(season %in% c("Winter", "Summer")) %>%
+  averages_by_group(hbt, season)
+
+# Join the seasonal averages to the Health Board geometry
+hb_season_map <- hb_geometry %>%
+  left_join(seasonal_summary, by = c("HBCode" = "hbt"))
+```
+
+```{r reshape}
+# Reshape to long format so that the rows include metric (i.e. average prescriptions and daylight) and its value
+hb_season_long <- hb_season_map %>%
+  pivot_longer(cols = c(avg_daylight, avg_rate), 
+               names_to  = "metric",  # so metric is either "average daylight" or "prescriptions"
+               values_to = "value") %>%  # so value is the actual value of daylight or prescriptions
+  # This associates each metric (daylight or prescriptions) to season (winter or summer)
+  mutate(metric_label = case_when(metric == "avg_daylight" & season == "Winter" ~ "Winter daylight (hours)",
+      metric == "avg_rate" & season == "Winter" ~ "Winter SSRIs per 1,000",
+      metric == "avg_daylight" & season == "Summer" ~ "Summer daylight (hours)",
+      metric == "avg_rate" & season == "Summer" ~ "Summer SSRIs per 1,000"), 
+    # Order how the plots will appear
+    metric_label = factor(metric_label,
+      levels = c("Winter daylight (hours)", "Winter SSRIs per 1,000", "Summer daylight (hours)", "Summer SSRIs per 1,000")))
+```
+
+```{r rescale}
+# rescale within each panel so each uses its full colour range and create hover text
+hb_season_long_scaled <- hb_season_long %>%
+  group_by(metric_label) %>%
+  mutate(value_scaled = rescale(value, to = c(0, 1))) %>% # this rescales to a 0 to 1 range
+  ungroup() %>%
+  # this adds the hover text
+  mutate(hover_text = paste0("Health Board: ", HBName, "<br>", "Season: ", season, "<br>", metric_label, ": ", round(value, 2)))
+```
+
+```{r faceted_plot}
+# Create the 4 faceted maps (winter/summer x daylight/prescriptions)
+faceted_plot <- ggplot(hb_season_long_scaled) +
+  # makes the maps and fills them based on a scaled value (0 to 1)
+  geom_sf(aes(fill = value_scaled, text = hover_text), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "C", na.value = "grey90",
+                       name = "Relative level\n(within panel)") +
+  # create a 2x2 grid by metric label (i.e., daylight and prescriptions)
+  facet_wrap(~ metric_label, ncol = 2) +
+  # add title and subtitle
+  labs(title = "Winter vs Summer Daylight and SSRI Prescribing",
+    subtitle = "Each panel has its own colour range (scaled within panel)",
+    fill = NULL) +
+  # change theme, size and remove gridlines
+  theme_minimal(base_size = 13) +
+  theme(panel.grid = element_blank(), legend.position = "right")
+```
+
+```{r plotly}
+# Convert the plot to plotly making it interactive with hovertext
+ggplotly(faceted_plot, tooltip = "text")
+```
+
+*Hover over maps to inspect*
+
+A first impression from the plot is that the SSRI prescriptions (right) remain similar in both summer and winter. Even Shetland, which shows the greatest variability in summer vs winter daylight shows almost no difference in summer vs winter prescribing. This implies that, even when accounting for regional differences, daylight does not seem to influence Board level prescribing of SSRIs. Interestingly, there seems to be an identical north-south gradient in both summer and winter, which goes from highest prescription rates in the southern Boards to lower ones in the northern Boards. This reflects the daylight gradient in the winter but is opposite to the daylight gradient seen in the summer. This north-south gradient could, therefore, potentially reflect more stable rural-urban (i.e., population) or broader socioeconomic gradients in Scotland. To understand which determinants might influence antidepressant prescribing most, it would be useful to look at the outliers to the gradient, e.g., Lothian (south, but dark blue) and Shetland (north, but light orange), and see whether they are also outliers in the graphs of population or deprivation level (which is not the case for daylight).
+
+# Conclusion
+
+Based on these three results on SSRI prescriptions between 2022 and 2024: 1. low month-to-month variability, 2. no clear cycle aligning with daylight, 3. presence of a geographic gradient unaffected by daylight, daylight does not appear to be a significant determinant of SSRI prescribing rate on a Health Board level. Instead, the figures show that it is likely the more stable, structural factors (deprivation, demographics, rural/urban classification) that mask the environmental ones. This also shows the importance of considering the scale of analysis, since it may be that a person's individual mood and feelings are influenced by daylight, but on a population-level, the mechanisms that affect antidepressant prescribing are far broader.
+
+# Limitations
+
+A key limitation is that the level of SSRI prescribing is only a proxy and does not show the actual incidence of depression or mood changes. Additionally, I did not take into account demographic factors, such as age or deprivation level across Health Boards, which could be hiding any true relationship. Another limitation is that I calculated daylight based on the centroid only, so it doesn't reflect the spread of the population in each region. Lastly, the analysis assumes that there is no variability between individuals in the timing of events, from daylight changes to depression to an actual prescription.
+
+# Future Work
+
+To truly assess whether SSRI prescribing is influenced by daylight the analysis should take into account broader demographic and socioeconomic data, in order to adjust for the structural determinants of health. Additionally, using more focused and local, GP-level, data could be a way to look at individual variations in mood and prescribing, not seen in the broad, Board level, prescription summaries. Using patient-level prescribing data would make it possible to consider the variability in the temporal sequence of the events: from daylight changes to a drop in mood and, later on, to the prescription of antidepressants. These approaches could help reveal whether there is any true, albeit small, effect of daylight on SSRI prescriptions.
+
+# References
+Lockhart, P., & Guthrie, B. (2011). Trends in primary care antidepressant prescribing 1995-2007: a longitudinal population database analysis. British Journal of General Practice, 61(590), e565–e572. https://doi.org/10.3399/bjgp11x593848
+
+Raza, A., Partonen, T., Hanson, L. M., Asp, M., Engström, E., Westerlund, H., & Halonen, J. I. (2023). Daylight during winters and symptoms of depression and sleep problems: A within-individual analysis. Environment International, 183, 108413. https://doi.org/10.1016/j.envint.2023.108413
+
+Aphalo, Pedro J. (2015) The r4photobiology suite. UV4Plants Bulletin, 2015:1, 21-29. DOI:10.19232/uv4pb.2015.1.14 (SunCalcMeeus)
