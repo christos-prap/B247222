@@ -15,21 +15,21 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 # Introduction 
-**1. Question:** Is there a relationship between daylight and SSRI antidepressant prescribing in Scotland, and are there differences based on Health Board?
+<u>Question</u>: Is there a relationship between daylight and SSRI antidepressant prescribing in Scotland, and are there differences based on Health Board?
 
 I chose to focus on this question because shortened daylight is often linked to a low mood as, for example, is seen in seasonal affective disorder (Raza et al., 2024). This is particularly relevant in Scotland, which spans a very large range in latitude, meaning that there is great daylight variability between regions. Large differences in daylight are also seen in different seasons, since summers are very long and winters very short. I, therefore, wanted to find out whether these daylight differences truly do cause changes in mood on a population level and, therefore, lead to patterns in antidepressant prescribing. I have chosen to focus on selective serotonin reuptake inhibitors (SSRIs), because they are the first-line treatment for depression and anxiety in Scotland. Unlike other antidepressant classes, like tricyclics, they are prescribed consistently across age groups and regions, which means that these factors would have less of an effect on prescribing rates (Lockhart & Guthrie, 2011).
 
-Hypothesis: I hypothesise that SSRI prescribing will be higher during winter months when daylight is shortest, and lower during the summer, when daylight is longest. I also expect that more northern Health Boards will show higher prescribing (and less daylight) during winter as well as lower summer prescribing (and more daylight) during the summer than southern Boards.
+<u>Hypothesis</u>: I hypothesise that SSRI prescribing will be higher during winter months when daylight is shortest, and lower during the summer, when daylight is longest. I also expect that more northern Health Boards will show higher prescribing (and less daylight) during winter as well as lower summer prescribing (and more daylight) during the summer than southern Boards.
 
 # Data & Methods
 
 To address the question, I use three public data sources for: 1. community prescribing, 2. Health Board population, and 3. Health Board geography. From the prescribing data, I look at monthly prescribing for SSRI antidepressants across 2022-2024, since this is recent post-Covid data, with a relatively long time span. I combine this with the population estimates to calculate the per-capita prescribing rates for each NHS Health Board in each month. I then join this to an estimate of daylight (for the 15th of each month), which I calculate based on the Health Board centroids (single representative point of location). Finally, I look at the relationship between daylight and prescriptions for Scotland as a whole and the winter vs summer differences in each Health Board.
 
-**1. Prescribing data:** Public Health Scotland, [Prescriptions in the Community](https://www.opendata.nhs.scot/dataset/prescriptions-in-the-community). I downloaded the "Data by Prescriber Location" files for every month from January 2022 up to December 2024. The links to the csv files used can be found in docs/file_links.csv in this project.
+<u>1. Prescribing data:</u> Public Health Scotland, [Prescriptions in the Community](https://www.opendata.nhs.scot/dataset/prescriptions-in-the-community). I downloaded the "Data by Prescriber Location" files for every month from January 2022 up to December 2024. The links to the csv files used can be found in docs/file_links.csv in this project.
 
-**2. Population Estimates:** Public Health Scotland, [Health Board 2019 Estimates (CSV file)](https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv)
+<u>2. Population Estimates:</u> Public Health Scotland, [Health Board 2019 Estimates (CSV file)](https://www.opendata.nhs.scot/dataset/7f010430-6ce1-4813-b25c-f7f335bdc4dc/resource/27a72cc8-d6d8-430c-8b4f-3109a9ceadb1/download/hb2019_pop_est_03102025.csv)
 
-**3. Geography:** data.gov.uk, [NHS Health Boards (zip file)](https://maps.gov.scot/ATOM/shapefiles/SG_NHS_HealthBoards_2019.zip).
+<u>3. Geography:</u> data.gov.uk, [NHS Health Boards (zip file)](https://maps.gov.scot/ATOM/shapefiles/SG_NHS_HealthBoards_2019.zip).
 
 ## Load packages and ingest prescribing data, keeping only SSRI antidepressants
 
@@ -96,7 +96,7 @@ SSRI_per_1000 <- SSRI_total %>%
 
 ```{r geometry}
 # Read geometry file
-hb_geometry <- st_read(here("data", "geometry", "SG_NHS_HealthBoards_2019.shp"), quiet = TRUE)
+hb_geometry <- st_read(here("data", "geometry", "SG_NHS_HealthBoards_2019.shp"))
 
 # Transform latitude and longitude to degrees (which is what the 4326 means), needed for SunCalcMeeus
 hb_geometry <- hb_geometry %>% 
@@ -171,7 +171,7 @@ datatable(monthly_averages_pretty, rownames = FALSE,
   formatRound(columns = c("Daylight (hours)", "SSRI prescriptions per 1,000"), digits = 2) # for 2 decimal places
 ```
 
-At first glance, we can see that SSRI prescribing does not vary considerably from month to month (no more than 6 items), while daylight varies considerably more (days in June are nearly 3 times longer than December). Sorting by SSRI prescriptions, we can see winter months appear both first (February) and second-to-last (December). This lack of pattern suggests that, even if there is an association between prescribing and daylight, it is much smaller than the effect of more stable, structural factors, which contrast the short-term changes in daylight. This could mean, for example, that deprivation or healthcare access affect a greater proportion of the population and to a greater degree than daylight. To get a better view of the relationship, I will look at the trends of antidepressant prescriptions and daylight on a time-wise plot across the entire span from 2022 to 2024.
+At first glance, we can see that SSRI prescribing does not vary considerably from month to month (no more than 6 items), while daylight varies considerably more (days in June are nearly 3 times longer than December). Sorting by SSRI prescriptions, we can see winter months appear both first (February) and second-to-last (December). This lack of a clear pattern suggests that, even if there is an association between prescribing and daylight, it is much smaller than the effect of more stable, structural factors, which contrast the short-term changes in daylight. This could mean, for example, that deprivation or healthcare access affect a greater proportion of the population and to a greater degree than daylight. To get a better view of the relationship, I will look at the trends of antidepressant prescriptions and daylight on a time-wise plot across the entire span from 2022 to 2024.
 
 ## Figure 2. Scotland-level seasonality
 
@@ -195,7 +195,7 @@ dual_plot <- plot_ly(date_averages, x = ~date) %>%
     xaxis = list(title = "Date (15th of each month)"),
     yaxis = list(title = "SSRI prescriptions per 1,000", showgrid = FALSE),
     yaxis2 = list(title = "Average daylight hours", overlaying = "y", side = "right", showgrid  = FALSE),
-    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.12),
+    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.12), # positioning of legend horizontal & central
     margin = list(t = 120, r = 65)) # this margin (t = top, r = right) ensures that the title and axes don't overlap
 
 # Print the plot
@@ -204,11 +204,11 @@ dual_plot
 
 *Hover over plot to inspect*
 
-The prescribing graph appears significantly noisier than the clear annual cycle in daylight. There are many abrupt month-to-month jumps in SSRI prescriptions, which do not align with the daylight pattern. Again, looking at the range of prescriptions per 1,000 (58.7 to 68.4), there is a relatively small difference (17%) from minimum to maximum, whereas the variation of daylight hours (6.8 to 17.8 hours) is much larger (162%). Since the graph has a relatively narrow range for prescriptions, these spikes could simply be a part of the normal variability of Scotland-level prescribing. This means that, although daylight could affect some individuals' mood, this effect is minimal Scotland-wide. However, it is also important to consider the temporal element of prescriptions. Even if daylight has an effect on mood, the effect on SSRI prescriptions may not be evident because of the differences in how quickly daylight affects mood and, in turn, how quickly the SSRIs are prescribed. To see whether regional differences could be hiding a possible association, I will look at SSRI prescriptions and daylight at each Health Board.
+The prescribing graph appears significantly noisier than the clear annual cycle in daylight. There are many abrupt month-to-month jumps in SSRI prescriptions, which do not align with the daylight pattern. Again, looking at the range of prescriptions per 1,000 (58.7 to 68.4), there is a relatively small difference (17%) from minimum to maximum, whereas the variation of daylight hours (6.8 to 17.8 hours) is much larger (162%). Since the graph has a relatively narrow range for prescriptions, these spikes could simply be a part of the normal variability of Scotland-level prescribing. This means that, although daylight could affect some individuals' mood, this effect is minimal Scotland-wide. However, it is also important to consider the temporal element of prescriptions. Even if daylight has an effect on mood, the effect on SSRI prescriptions may not be evident because of the differences in how quickly daylight affects mood and, in turn, how quickly the SSRIs are prescribed. To see whether regional differences could be hiding a possible association, I will look at SSRI prescriptions and daylight in each Health Board.
 
 ## Figure 3. Winter vs Summer differences for each Health Board
 
-In this figure I look at winter, the period with the shortest daylight time, and summer, the period with the longest daylight time. I calculate the average daylight and prescription rate for each Health Board (2022-2024) during the summer and winter, resulting in 4 maps.
+In this figure I look at winter, the period with the shortest daylight time, and summer, the period with the longest daylight time. I present the average daylight and prescription rate for each Health Board (2022-2024) during the summer and winter, giving 4 maps.
 
 ```{r seasonal_geometry}
 # Keep only Winter and Summer seasons from SSRI_final and calculate averages using helper function
