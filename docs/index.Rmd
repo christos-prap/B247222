@@ -61,7 +61,7 @@ prescriptions_raw <- list.files(here("data", "csv_files"), pattern = "csv", full
 ```
 
 ```{r SSRI_data}
-# Keep only SSRI antidepressants and select only the columns: hbt, number of items and paid_date_month and create a new date column with the 15th of each month
+# Keep only SSRI antidepressants (BNF: 040303) and select only the columns: hbt, number of items and paid_date_month and create a new date column with the 15th of each month
 SSRI_only <- prescriptions_raw %>%
   filter(str_starts(bnf_item_code, "040303")) %>%
   select(hbt,number_of_paid_items,paid_date_month) %>%
