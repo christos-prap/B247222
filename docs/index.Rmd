@@ -1,5 +1,6 @@
 ---
 title: "How does daylight duration influence antidepressant prescribing?"
+date: "November 27, 2025"
 output:
   html_document:
     theme: united
