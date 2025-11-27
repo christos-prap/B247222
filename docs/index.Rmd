@@ -49,14 +49,18 @@ library(htmltools) # for captions
 ```
 
 ```{r import_prescribing_data}
-# Read all csv prescription files and combine into one and make sure to avoid problems with DMDCode column
-prescriptions_raw <- list.files(here("data", "csv_files"), pattern = "csv", full.names = TRUE) %>%
-  map_dfr(function(f) {
-    df <- read_csv(f, na = c("", "NA"), show_col_types = FALSE)
-    # Dont include DMDCode if it exists, as it will lead to binding issues
-    df <- df %>% select(-any_of("DMDCode"))
-    df
+# Read the list of monthly CSV URLs from file_links.csv
+links <- read_csv(here("docs", "file_links.csv"))
+
+# Download and combine all prescribing CSVs from the URLs
+prescriptions_raw <- links %>%
+  pull(link) %>%
+  map(function(u) {
+    df <- read_csv(u, na = c("", "NA"))
+    # Drop DMDCode if present, as it will lead to binding issues
+    df %>% select(-any_of("DMDCode"))
   }) %>%
+  list_rbind() %>% 
   clean_names()
 ```
 
@@ -96,7 +100,7 @@ SSRI_per_1000 <- SSRI_total %>%
 
 ```{r geometry}
 # Read geometry file
-hb_geometry <- st_read(here("data", "geometry", "SG_NHS_HealthBoards_2019.shp"))
+hb_geometry <- st_read(here("data", "geometry", "SG_NHS_HealthBoards_2019.shp"), quiet = TRUE)
 
 # Transform latitude and longitude to degrees (which is what the 4326 means), needed for SunCalcMeeus
 hb_geometry <- hb_geometry %>% 
